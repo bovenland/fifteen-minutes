@@ -2,26 +2,12 @@
 
 require('dotenv').config()
 
-const argv = require('yargs')
-  .options({
-    'intersects': {
-      alias: 'i',
-      describe: 'GeoJSON polygon all road segments should intersect with'
-    }
-  })
-  .help('help')
-  .argv
-
 const fs = require('fs')
 const axios = require('axios')
 const H = require('highland')
 const turf = require('@turf/turf')
-const pg = require('pg')
-const QueryStream = require('pg-query-stream')
 
-const osrmPort = 7000
-
-const pool = new pg.Pool()
+const osrmPort = process.env.OSRM_PORT
 
 const speed = process.env.SPEED
 const minutes = process.env.MINUTES
@@ -87,14 +73,12 @@ async function fetch (url) {
   }
 }
 
-async function computeGrid ({ origin, postcode }, distance, gridResolution, postcodeLength) {
-  console.error('Computing grid:', postcode)
-  if (postcode.length !== postcodeLength) {
-    return
-  }
+async function computeGrid (row, distance, gridResolution) {
+  console.error('Computing reachability grid:', row.postcode)
 
   // Add gridResolution * 2 to make sure grid contains all hexagons of which
   // the centroid _might_ be in range
+  const origin = row.geometry
   const distanceAroundOrigin = turf.buffer(origin, distance + gridResolution * 2, { units: 'meters' })
 
   const hexGrid = turf.hexGrid(turf.bbox(distanceAroundOrigin), gridResolution, {
@@ -134,7 +118,7 @@ async function computeGrid ({ origin, postcode }, distance, gridResolution, post
   await sleep(100)
 
   return {
-    postcode,
+    ...row,
     origin,
     durations: routeDestinations.map(({ duration }) => duration),
     geometry: {
@@ -145,29 +129,12 @@ async function computeGrid ({ origin, postcode }, distance, gridResolution, post
   }
 }
 
-async function run (polygon) {
-  const query = createOriginsQuery(polygon, postcodeLength)
-
-  const client = await pool.connect()
-  const stream = client.query(new QueryStream(query))
-
-  const data = H(stream)
-    .flatMap((row) => H(computeGrid(row, distance, gridResolution, postcodeLength)))
-    .compact()
-    .map(JSON.stringify)
-    .intersperse('\n')
-
-  data
-    .pipe(process.stdout)
-
-  data.observe()
-    .done(() => client.release())
-}
-
-let polygon
-if (argv.intersects) {
-  const filename = argv.intersects
-  polygon = JSON.parse(fs.readFileSync(filename))
-}
-
-run(polygon)
+H(process.stdin)
+  .split()
+  .compact()
+  .map(JSON.parse)
+  .flatMap((row) => H(computeGrid(row, distance, gridResolution, postcodeLength)))
+  .compact()
+  .map(JSON.stringify)
+  .intersperse('\n')
+  .pipe(process.stdout)

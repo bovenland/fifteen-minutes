@@ -8,8 +8,6 @@ const pg = require('pg')
 
 const pool = new pg.Pool()
 
-const maxDistance = parseFloat(process.env.HEX_SIZE) / 2
-
 async function findNearestAddress (client, row) {
   const hexagon = row.geometry
   const center = turf.center(row.geometry).geometry
@@ -63,7 +61,7 @@ async function run () {
       originCountLast++
       if (originCount % 250 === 0) {
         console.error('  Found origins:', originCount)
-        console.error('    Hexagons with origins (last 250):', `${Math.round(originCount / hexagonCountLast  * 100)}%`)
+        console.error('    Hexagons with origins (last 250):', `${Math.round(originCountLast / hexagonCountLast  * 100)}%`)
         console.error('    Hexagons with origins (total):', `${Math.round(originCount / hexagonCount  * 100)}%`)
         originCountLast = 0
         hexagonCountLast = 0
